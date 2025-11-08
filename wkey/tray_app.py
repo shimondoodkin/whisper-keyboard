@@ -11,6 +11,7 @@ from PySide6.QtGui import QAction, QIcon, QPainter, QPixmap, QColor, QFont
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QDialog,
     QFormLayout,
     QHBoxLayout,
@@ -19,11 +20,11 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QMessageBox,
     QPushButton,
     QSystemTrayIcon,
+    QTextEdit,
     QVBoxLayout,
-    QMessageBox,
-    QComboBox,
     QWidget,
 )
 
@@ -105,35 +106,10 @@ class SettingsDialog(QDialog):
 
         self.hotkey_input = QLineEdit()
         hotkey_row = QHBoxLayout()
-        hotkey_row.addWidget(self.hotkey_input)
+        hotkey_row.addWidget(self.hotkey_input, 1)
         self.keyboard_enabled_checkbox = QCheckBox("Enable")
-        hotkey_row.addWidget(self.keyboard_enabled_checkbox)
+        hotkey_row.addWidget(self.keyboard_enabled_checkbox, 1)
         form.addRow("Keyboard shortcut", hotkey_row)
-
-        self.mouse_button_combo = QComboBox()
-        self.mouse_button_combo.addItem("Disabled", "")
-        self.mouse_button_combo.addItem("Middle mouse", "middle")
-        self.mouse_button_combo.addItem("Thumb button 1 (Mouse 4)", "x1")
-        self.mouse_button_combo.addItem("Thumb button 2 (Mouse 5)", "x2")
-        mouse_row = QHBoxLayout()
-        mouse_row.addWidget(self.mouse_button_combo)
-        self.mouse_enabled_checkbox = QCheckBox("Enable")
-        mouse_row.addWidget(self.mouse_enabled_checkbox)
-        form.addRow("Mouse trigger", mouse_row)
-
-        self.mouse_practice_label = QLabel("Press a mouse button to preview")
-        self.mouse_practice_label.setAlignment(Qt.AlignCenter)
-        self.mouse_practice_label.setMinimumHeight(60)
-        self.mouse_practice_label.setStyleSheet(
-            "border: 1px dashed #888; border-radius: 6px; color: #333; font-size: 13px; padding: 8px;"
-        )
-        form.addRow("Mouse practice", self.mouse_practice_label)
-
-        self.llm_checkbox = QCheckBox("Enable LLM correction")
-        form.addRow("", self.llm_checkbox)
-
-        self.chinese_input = QLineEdit()
-        form.addRow("Chinese conversion", self.chinese_input)
 
         self.capture_button = QPushButton("Capture hotkey")
         self.capture_button.setCheckable(True)
@@ -157,6 +133,51 @@ class SettingsDialog(QDialog):
         recent_keys_widget = QWidget()
         recent_keys_widget.setLayout(recent_keys_container)
         form.addRow("", recent_keys_widget)
+
+        self.mouse_button_combo = QComboBox()
+        self.mouse_button_combo.addItem("Disabled", "")
+        self.mouse_button_combo.addItem("Middle mouse", "middle")
+        self.mouse_button_combo.addItem("Thumb button 1 (Mouse 4)", "x1")
+        self.mouse_button_combo.addItem("Thumb button 2 (Mouse 5)", "x2")
+        mouse_row = QHBoxLayout()
+        mouse_row.addWidget(self.mouse_button_combo, 1)
+        self.mouse_enabled_checkbox = QCheckBox("Enable")
+        mouse_row.addWidget(self.mouse_enabled_checkbox, 1)
+        form.addRow("Mouse trigger", mouse_row)
+
+        self.mouse_practice_label = QLabel("Press a mouse button to preview")
+        self.mouse_practice_label.setAlignment(Qt.AlignCenter)
+        self.mouse_practice_label.setMinimumHeight(60)
+        self.mouse_practice_label.setStyleSheet(
+            "border: 1px dashed #888; border-radius: 6px; color: #333; font-size: 13px; padding: 8px;"
+        )
+        form.addRow("Mouse practice", self.mouse_practice_label)
+
+        self.llm_checkbox = QCheckBox("Enable LLM correction")
+        form.addRow("", self.llm_checkbox)
+
+        self.llm_prompt_input = QTextEdit()
+        self.llm_prompt_input.setPlaceholderText("Optional: custom LLM instructions for post-processing.")
+        self.llm_prompt_input.setFixedHeight(80)
+        form.addRow("LLM prompt", self.llm_prompt_input)
+
+        self.chinese_combo = QComboBox()
+        self.chinese_combo.addItem("Disabled", "")
+        conversions = [
+            ("hk2s", "HK Traditional → Simplified"),
+            ("s2hk", "Simplified → HK Traditional"),
+            ("s2t", "Simplified → Traditional"),
+            ("s2tw", "Simplified → Taiwan Traditional"),
+            ("s2twp", "Simplified → Taiwan Traditional (phrases)"),
+            ("t2hk", "Traditional → HK Traditional"),
+            ("t2s", "Traditional → Simplified"),
+            ("t2tw", "Traditional → Taiwan Traditional"),
+            ("tw2s", "Taiwan Traditional → Simplified"),
+            ("tw2sp", "Taiwan Traditional → Simplified (phrases)"),
+        ]
+        for code, label in conversions:
+            self.chinese_combo.addItem(label, code)
+        form.addRow("Chinese conversion", self.chinese_combo)
 
         button_row = QHBoxLayout()
         exit_button = QPushButton("Exit wkey")
@@ -199,7 +220,8 @@ class SettingsDialog(QDialog):
             "enable_keyboard_shortcut": self.keyboard_enabled_checkbox.isChecked(),
             "enable_mouse_shortcut": self.mouse_enabled_checkbox.isChecked(),
             "llm_correct": self.llm_checkbox.isChecked(),
-            "chinese_conversion": self.chinese_input.text().strip(),
+            "llm_prompt": self.llm_prompt_input.toPlainText().strip(),
+            "chinese_conversion": self.chinese_combo.currentData() or "",
         }
 
     def load_from_settings(self, settings):
@@ -217,7 +239,10 @@ class SettingsDialog(QDialog):
         self.mouse_button_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.mouse_enabled_checkbox.setChecked(bool(settings.get("enable_mouse_shortcut", True)))
         self.llm_checkbox.setChecked(bool(settings.get("llm_correct")))
-        self.chinese_input.setText(settings.get("chinese_conversion", ""))
+        self.llm_prompt_input.setPlainText(settings.get("llm_prompt", "").strip())
+        conversion_value = settings.get("chinese_conversion", "")
+        idx = self.chinese_combo.findData(conversion_value)
+        self.chinese_combo.setCurrentIndex(idx if idx >= 0 else 0)
 
     def accept(self):
         data = self._collect_settings()
@@ -484,6 +509,7 @@ class TrayController:
             llm_env = os.environ.get("LLM_CORRECT")
             if llm_env is not None:
                 values["llm_correct"] = llm_env.lower() in ("1", "true", "yes", "on")
+            values["llm_prompt"] = os.environ.get("LLM_CORRECT_PROMPT", values.get("llm_prompt", ""))
             values["chinese_conversion"] = os.environ.get("CHINESE_CONVERSION", values.get("chinese_conversion", ""))
         return values
 

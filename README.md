@@ -51,6 +51,7 @@ Configure the app through environment variables (put them in `.env`, your shell 
 - `WKEY_MOUSE_BUTTON` (optional): `middle`, `x1`, or `x2` to start dictation while holding the selected mouse button. Leave blank to disable.
 - `WKEY_MOUSE_ENABLED` (optional): set to `false` to ignore mouse-trigger input even if a button is configured (default `true`).
 - `LLM_CORRECT` (optional): set to `true` to run transcripts through `llm_corrector`.
+- `LLM_CORRECT_PROMPT` (optional): custom multiline instructions sent to the LLM when correction is enabled. Defaults to a generic punctuation/grammar fixer prompt.
 - `CHINESE_CONVERSION` (optional): OpenCC conversion code such as `s2t`, `t2s`, etc.
 
 Example:
@@ -82,7 +83,7 @@ wkey is active. Hold down ctrl_r to start dictating.
 Launch `wkey-tray` (pip) or `python -m wkey.tray_app` (repo clone).
 
 - A "W" icon appears in your notification area immediately; the listener runs in the background.
-- Click/double-click the icon to open the Settings dialog: edit Groq/OpenAI keys, pick a backend and hotkey (with live key-capture history, including left/right modifier combos like `ctrl_r+shift_r`), toggle keyboard/mouse shortcuts on or off, optionally choose a mouse button trigger (with a live practice pad that displays the button you just pressed), toggle LLM correction, set Chinese conversion, and Apply/Save without restarting; dictation auto-pauses while the dialog is open so your capture presses don't trigger recordings.
+- Click/double-click the icon to open the Settings dialog: edit Groq/OpenAI keys, pick a backend and hotkey (with live key-capture history, including left/right modifier combos like `ctrl_r+shift_r`), toggle keyboard/mouse shortcuts on or off, optionally choose a mouse button trigger (with a live practice pad that displays the button you just pressed), toggle LLM correction, supply custom LLM instructions or pick an OpenCC Chinese conversion from a dropdown, and Apply/Save without restarting; dictation auto-pauses while the dialog is open so your capture presses don't trigger recordings.
 - Launching `wkey-tray` multiple times automatically replaces the previous instance (stored under a temp PID file), so only one tray service runs at a time.
 - Right-click the tray icon for a context menu with **Settings**, **Pause dictation**, and **Exit**.
 - Press `Ctrl+C` in the launching terminal to shut down the tray app as well.

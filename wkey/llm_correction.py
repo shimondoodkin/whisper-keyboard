@@ -1,6 +1,20 @@
 import os
 import requests
 from collections import deque
+from textwrap import dedent
+
+
+DEFAULT_PROMPT = dedent(
+    """\
+    You are a text correction expert. Fix punctuation, grammar, and typos while keeping the user's intent unchanged.
+    Return only the corrected transcript with no extra commentary.
+    """
+)
+
+
+def _prompt_template():
+    return os.getenv("LLM_CORRECT_PROMPT", DEFAULT_PROMPT).strip() or DEFAULT_PROMPT
+
 
 def create_llm_corrector():
     """
@@ -23,16 +37,20 @@ def create_llm_corrector():
         context = "".join(history)
         text_to_correct = transcript
         
-        prompt = f"""You are a text correction expert. Your task is to correct the following text by adding punctuation, fixing typos, and improving grammar. The text is a transcript of spoken words. Do not add any explanations, preambles, or apologies. Only return the corrected version of the text.
+        instructions = _prompt_template()
+        prompt = dedent(
+            f"""\
+            {instructions}
 
-Conversation History (for context):
-{context}
+            Conversation History (most recent first):
+            {context}
 
-Text to Correct:
-{text_to_correct}
+            Text to Correct:
+            {text_to_correct}
 
-Corrected Text:
-"""
+            Corrected Text:
+            """
+        )
 
         headers = {
             "Authorization": f"Bearer {api_key}",
