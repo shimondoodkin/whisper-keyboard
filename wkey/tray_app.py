@@ -36,6 +36,7 @@ from wkey.config import (
     load_settings,
     save_settings,
 )
+from wkey.llm_correction import DEFAULT_PROMPT
 from wkey.single_instance import PidFileLock, SingleInstanceError
 from wkey.wkey import start_service, stop_service, refresh_configuration, set_error_handler, set_paused
 
@@ -154,12 +155,26 @@ class SettingsDialog(QDialog):
         form.addRow("Mouse practice", self.mouse_practice_label)
 
         self.llm_checkbox = QCheckBox("Enable LLM correction")
+        self.llm_checkbox.toggled.connect(self._update_llm_controls)
         form.addRow("", self.llm_checkbox)
 
         self.llm_prompt_input = QTextEdit()
         self.llm_prompt_input.setPlaceholderText("Optional: custom LLM instructions for post-processing.")
         self.llm_prompt_input.setFixedHeight(80)
-        form.addRow("LLM prompt", self.llm_prompt_input)
+        self.llm_prompt_input.setAcceptRichText(False)
+        self.reset_prompt_button = QPushButton("Reset prompt")
+        self.reset_prompt_button.clicked.connect(self._reset_llm_prompt)
+        prompt_layout = QVBoxLayout()
+        prompt_layout.setContentsMargins(0, 0, 0, 0)
+        prompt_layout.addWidget(self.llm_prompt_input)
+        prompt_btn_row = QHBoxLayout()
+        prompt_btn_row.addStretch(1)
+        prompt_btn_row.addWidget(self.reset_prompt_button)
+        prompt_layout.addLayout(prompt_btn_row)
+        prompt_widget = QWidget()
+        prompt_widget.setLayout(prompt_layout)
+        form.addRow("LLM prompt", prompt_widget)
+        self._update_llm_controls(self.llm_checkbox.isChecked())
 
         self.chinese_combo = QComboBox()
         self.chinese_combo.addItem("Disabled", "")
@@ -239,6 +254,7 @@ class SettingsDialog(QDialog):
         self.mouse_button_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.mouse_enabled_checkbox.setChecked(bool(settings.get("enable_mouse_shortcut", True)))
         self.llm_checkbox.setChecked(bool(settings.get("llm_correct")))
+        self._update_llm_controls(self.llm_checkbox.isChecked())
         self.llm_prompt_input.setPlainText(settings.get("llm_prompt", "").strip())
         conversion_value = settings.get("chinese_conversion", "")
         idx = self.chinese_combo.findData(conversion_value)
@@ -346,6 +362,13 @@ class SettingsDialog(QDialog):
 
     def _apply_mouse_pad(self, text: str):
         self.mouse_practice_label.setText(text)
+
+    def _reset_llm_prompt(self):
+        self.llm_prompt_input.setPlainText(DEFAULT_PROMPT.strip())
+
+    def _update_llm_controls(self, enabled: bool):
+        self.llm_prompt_input.setEnabled(enabled)
+        self.reset_prompt_button.setEnabled(enabled)
 
     def _drain_key_queue(self):
         updated = False
