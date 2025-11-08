@@ -1,7 +1,9 @@
 import os
 import requests
 
-def apply_whisper(filepath: str, mode: str) -> str:
+from .io_utils import open_audio_source
+
+def apply_whisper(audio_source, mode: str) -> str:
     """
     Calls the whisperX API to transcribe or translate an audio file.
     """
@@ -32,8 +34,9 @@ def apply_whisper(filepath: str, mode: str) -> str:
 
     # --- POST request to start transcription ---
     try:
-        with open(filepath, "rb") as f:
-            files = {"file": (os.path.basename(filepath), f, mime_type)}
+        with open_audio_source(audio_source) as f:
+            filename = getattr(f, "name", "recording.wav")
+            files = {"file": (os.path.basename(filename), f, mime_type)}
             post_url = f"{baseurl}/speech-to-text"
             response = requests.post(post_url, params=params, files=files, timeout=60)
             response.raise_for_status()

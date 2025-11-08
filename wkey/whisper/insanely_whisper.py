@@ -1,7 +1,9 @@
 import os
 import requests
 
-def apply_whisper(filepath: str, mode: str) -> str:
+from .io_utils import open_audio_source
+
+def apply_whisper(audio_source, mode: str) -> str:
     """
     Calls the insanely-fast-whisper API to transcribe an audio file.
     Note: The 'mode' (transcribe/translate) is handled by the API based on the language.
@@ -13,8 +15,9 @@ def apply_whisper(filepath: str, mode: str) -> str:
 
     # --- Step 1: Upload the audio file ---
     try:
-        with open(filepath, "rb") as f:
-            files = {"file": (os.path.basename(filepath), f, "audio/wav")}
+        with open_audio_source(audio_source) as f:
+            filename = getattr(f, "name", "recording.wav")
+            files = {"file": (os.path.basename(filename), f, "audio/wav")}
             upload_url = f"{baseurl}/files"
             upload_response = requests.post(upload_url, files=files, timeout=300)
             upload_response.raise_for_status()

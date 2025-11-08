@@ -1,3 +1,4 @@
+import io
 import os
 import signal
 import threading
@@ -32,23 +33,25 @@ keyboard_controller = KeyboardController()
 
 
 def _record_and_transcribe(audio_chunks):
-    """Saves recorded audio and returns the transcript."""
+    """Write in-memory WAV and return the transcript."""
     if not audio_chunks:
         print("No audio data recorded, probably because the key was pressed for too short a time.")
         return None
 
     # Join the bytes chunks
     all_audio_bytes = b''.join(audio_chunks)
-    
-    # Write to a WAV file using the standard 'wave' module
-    with wave.open('recording.wav', 'wb') as wf:
+
+    audio_buffer = io.BytesIO()
+    with wave.open(audio_buffer, 'wb') as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)  # 2 bytes for 'int16'
         wf.setframerate(sample_rate)
         wf.writeframes(all_audio_bytes)
 
+    audio_buffer.seek(0)
+
     try:
-        transcript = apply_whisper('recording.wav', 'transcribe')
+        transcript = apply_whisper(audio_buffer, 'transcribe')
         return transcript
     except Exception as e:
         print(f"Error during transcription: {e}")

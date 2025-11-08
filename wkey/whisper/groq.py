@@ -3,6 +3,8 @@ import os
 from dotenv import load_dotenv
 from groq import Groq
 
+from .io_utils import open_audio_source
+
 load_dotenv()
 client = Groq(
     api_key=os.environ.get("GROQ_API_KEY"),
@@ -12,14 +14,14 @@ WHISPER_MODEL = os.environ.get("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
 WHISPER_LANGUAGE = os.environ.get("WHISPER_LANGUAGE")
 
 
-def apply_whisper(filepath: str, mode: str) -> str:
+def apply_whisper(audio_source, mode: str) -> str:
 
     if mode not in ("translate", "transcribe"):
         raise ValueError(f"Invalid mode: {mode}")
 
     prompt = "Hello, this is a properly structured message. GPT, ChatGPT."
     
-    with open(filepath, "rb") as audio_file:
+    with open_audio_source(audio_source) as audio_file:
         if mode == "translate":
             response = client.audio.translations.create(
                 file=audio_file,
