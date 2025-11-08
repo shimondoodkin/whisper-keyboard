@@ -1,3 +1,4 @@
+import array
 import io
 import os
 import signal
@@ -42,6 +43,7 @@ key_label = os.environ.get("WKEY", current_settings.get("hotkey", "ctrl_r"))
 mouse_button_label = os.environ.get("WKEY_MOUSE_BUTTON", current_settings.get("mouse_button", ""))
 keyboard_enabled = _env_bool("WKEY_KEYBOARD_ENABLED", current_settings.get("enable_keyboard_shortcut", True))
 mouse_enabled = _env_bool("WKEY_MOUSE_ENABLED", current_settings.get("enable_mouse_shortcut", True))
+continuous_listen = _env_bool("WKEY_CONTINUOUS_LISTEN", current_settings.get("continuous_listen", True))
 CHINESE_CONVERSION = os.environ.get("CHINESE_CONVERSION")
 
 HOTKEY_PARTS = set()
@@ -49,6 +51,11 @@ pressed_keys = set()
 MOUSE_BUTTON = None
 mouse_pressed = False
 paused = False
+recording = False
+audio_data = []
+audio_lock = threading.Lock()
+audio_stream_lock = threading.Lock()
+audio_stream = None
 
 def _parse_hotkey(label: str):
     parts = []
@@ -193,21 +200,24 @@ def refresh_configuration(settings=None, clear_missing=True):
     mouse_enabled_flag = _coerce_bool(mouse_env_enabled, (settings or {}).get("enable_mouse_shortcut", mouse_enabled))
     _set_mouse_enabled(mouse_enabled_flag)
     CHINESE_CONVERSION = os.environ.get("CHINESE_CONVERSION")
-
-# This flag determines when to record
-recording = False
-
-# This is where we'll store the audio (as bytes)
-audio_data = []
-audio_lock = threading.Lock()
-audio_stream_lock = threading.Lock()
-audio_stream = None
+    continuous_env = os.environ.get("WKEY_CONTINUOUS_LISTEN") if "WKEY_CONTINUOUS_LISTEN" in os.environ else None
+    continuous_value = _coerce_bool(continuous_env, (settings or {}).get("continuous_listen", continuous_listen))
+    _set_continuous_listen(continuous_value)
 
 # This is the sample rate for the audio
 sample_rate = 16000
 
 # Keyboard controller
 keyboard_controller = KeyboardController()
+
+
+def _audio_callback(indata, frames, time_info, status):
+    """Capture callback for sounddevice stream."""
+    if status:
+        print(status)
+    if recording:
+        with audio_lock:
+            audio_data.append(bytes(indata))
 
 
 def _start_audio_capture():
@@ -217,7 +227,7 @@ def _start_audio_capture():
         if audio_stream is not None:
             return True
         try:
-            stream = sd.RawInputStream(callback=callback, channels=1, samplerate=sample_rate, dtype='int16')
+            stream = sd.RawInputStream(callback=_audio_callback, channels=1, samplerate=sample_rate, dtype='int16')
             stream.start()
             audio_stream = stream
             return True
@@ -227,9 +237,11 @@ def _start_audio_capture():
             return False
 
 
-def _stop_audio_capture():
+def _stop_audio_capture(force: bool = False):
     """Stop the microphone stream when dictation ends."""
     global audio_stream
+    if not force and continuous_listen:
+        return
     with audio_stream_lock:
         stream = audio_stream
         audio_stream = None
@@ -244,6 +256,34 @@ def _stop_audio_capture():
             stream.close()
         except Exception:
             pass
+
+
+def _set_continuous_listen(enabled: bool):
+    global continuous_listen
+    continuous_listen = bool(enabled)
+    os.environ["WKEY_CONTINUOUS_LISTEN"] = "true" if continuous_listen else "false"
+    if continuous_listen and not paused:
+        _start_audio_capture()
+    elif not continuous_listen and not recording:
+        _stop_audio_capture(force=True)
+
+
+def _is_silence(raw_audio: bytes, silence_threshold: int = 300, min_samples: int = 1600) -> bool:
+    """Return True when the captured buffer contains only near-zero samples."""
+    if not raw_audio:
+        return True
+
+    # Require enough samples (~0.1s) to make a decision.
+    if len(raw_audio) < min_samples * 2:
+        return True
+
+    samples = array.array('h')
+    samples.frombytes(raw_audio)
+    peak = max(abs(sample) for sample in samples)
+    return peak < silence_threshold
+
+
+_set_continuous_listen(continuous_listen)
 
 
 def _hotkey_active():
@@ -293,6 +333,10 @@ def _record_and_transcribe(audio_chunks):
 
     # Join the bytes chunks
     all_audio_bytes = b''.join(audio_chunks)
+
+    if _is_silence(all_audio_bytes):
+        print("No speech detected, skipping transcription.")
+        return None
 
     audio_buffer = io.BytesIO()
     with wave.open(audio_buffer, 'wb') as wf:
@@ -393,17 +437,6 @@ def _maybe_stop_recording():
 
     threading.Thread(target=worker, args=(audio_chunks,), daemon=True).start()
 
-
-def callback(indata, frames, time, status):
-    """This is called (from a separate thread) for each audio block."""
-    if status:
-        print(status)
-    if recording:
-        # Copy the bytes because RawInputStream reuses the buffer
-        with audio_lock:
-            audio_data.append(bytes(indata))
-
-
 def run(stop_event=None, install_sigint_handler=True):
     """Runs the listener/audio loop until stop_event is set."""
     hint = _trigger_hint()
@@ -451,7 +484,7 @@ def run(stop_event=None, install_sigint_handler=True):
         internal_event.set()
         listener.stop()
         listener.join()
-        _stop_audio_capture()
+        _stop_audio_capture(force=True)
         if mouse_listener:
             mouse_listener.stop()
             mouse_listener.join()
@@ -475,11 +508,15 @@ def set_paused(value: bool):
     elif not value and paused:
         print("Dictation resumed.")
     paused = value
-    if paused and recording:
-        recording = False
-        _stop_audio_capture()
+    if paused:
+        if recording:
+            recording = False
+        _stop_audio_capture(force=True)
         with audio_lock:
             audio_data = []
+    else:
+        if continuous_listen:
+            _start_audio_capture()
 
 
 def stop_service(stop_event, thread=None, timeout=5):
@@ -488,7 +525,7 @@ def stop_service(stop_event, thread=None, timeout=5):
         stop_event.set()
     if thread:
         thread.join(timeout=timeout)
-    _stop_audio_capture()
+    _stop_audio_capture(force=True)
 
 
 def main():

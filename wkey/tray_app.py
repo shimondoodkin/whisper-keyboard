@@ -154,6 +154,12 @@ class SettingsDialog(QDialog):
         )
         form.addRow("Mouse practice", self.mouse_practice_label)
 
+        self.continuous_listen_checkbox = QCheckBox("Keep microphone active for faster start")
+        self.continuous_listen_checkbox.setToolTip(
+            "When enabled, wkey keeps the microphone stream open all the time for quicker dictation starts."
+        )
+        form.addRow("Continuous listening", self.continuous_listen_checkbox)
+
         self.llm_checkbox = QCheckBox("Enable LLM correction")
         self.llm_checkbox.toggled.connect(self._update_llm_controls)
 
@@ -236,6 +242,7 @@ class SettingsDialog(QDialog):
             "mouse_button": self.mouse_button_combo.currentData() or "",
             "enable_keyboard_shortcut": self.keyboard_enabled_checkbox.isChecked(),
             "enable_mouse_shortcut": self.mouse_enabled_checkbox.isChecked(),
+            "continuous_listen": self.continuous_listen_checkbox.isChecked(),
             "llm_correct": self.llm_checkbox.isChecked(),
             "llm_provider": self.llm_provider_combo.currentData(),
             "llm_prompt": self.llm_prompt_input.toPlainText().strip(),
@@ -256,6 +263,7 @@ class SettingsDialog(QDialog):
         idx = self.mouse_button_combo.findData(mouse_value)
         self.mouse_button_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.mouse_enabled_checkbox.setChecked(bool(settings.get("enable_mouse_shortcut", True)))
+        self.continuous_listen_checkbox.setChecked(bool(settings.get("continuous_listen", True)))
         self.llm_checkbox.setChecked(bool(settings.get("llm_correct")))
         provider_value = settings.get("llm_provider", "openai")
         idx = self.llm_provider_combo.findData(provider_value)
