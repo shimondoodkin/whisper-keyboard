@@ -1,68 +1,167 @@
 # whisper-keyboard
 
+Hands-free typing powered by OpenAI/Groq Whisper. Hold your chosen hotkey, speak, release, and watch the text appear in any application. whisper-keyboard captures audio locally, transcribes it via Whisper (including Whisper Large V3 at roughly **$0.03 per hour of transcription**), applies optional corrections, and injects the text as native keystrokes. A lightweight system-tray companion keeps the service running quietly in the background.
+
 Video demo: https://www.youtube.com/watch?v=VnFtVR72jM4&feature=youtu.be
 
-Smulate keyboard typing with voice commands on your computer. Use the power of OpenAI's Whisper.
+---
 
-Start the wkey listener. Keep a button pressed (by default: right ctrl) and speak. Your voice will be recoded locally. When the button is released, your command will be transcribed via Whisper and the text will be streamed to your keyboard.
+## Features
 
-You can use your voice to write anywhere. 
+- 🎙️ **Press-to-talk dictation** – hold a global hotkey (default `right ctrl`), speak, and release to insert text anywhere.
+- 🧠 **Optional LLM post-processing** – automatically clean up transcripts or convert between Simplified/Traditional Chinese.
+- 🪟 **System-tray companion** – launch `wkey` minimized, view an About dialog, and exit via tray menu, About dialog, or `Ctrl+C`.
+- 🧩 **Drop-in API keys** – works with OpenAI or Groq Whisper; choose at runtime via environment variables.
+- 🛡️ **Local audio buffering** – audio stays on your machine until you explicitly send it to the Whisper backend.
 
-You will incur costs for Whisper API. Currently, it costs $0.36 for 1 hour of transcription.
+---
 
-## Setup
+## Installation
 
-Install the package from PyPI or run it directly from the source tree.
+### From PyPI
 
-```shell
+```bash
 pip install wkey
 ```
 
-To try it locally without installing, clone/download this repo, install the dependencies from `requirements.txt`, then either run:
+To install directly from this GitHub fork:
 
-- `python run_wkey.py` (terminal mode), or
-- `python -m wkey.tray_app` to launch the new system-tray companion that keeps wkey running in the background. The tray icon stays in the notification area; click it to see an About dialog with Close/Exit buttons.
-
-You will need to set a couple of environment variables:
-
-- GROQ_API_KEY or OPENAI_API_KEY: provide at least one. If both are set, Groq will be used by default unless you override `WHISPER_BACKEND`.
-- WKEY: the keyboard key you want to use to start recording. By default, it is set to right ctrl. You can use any key. Note that Mac and Windows might have different key codes. You can run `fkey` to find the code of the key you want to use.
-
-You can set the environment variables in your shell:
-
-```shell
-export GROQ_API_KEY=<your key>  # or OPENAI_API_KEY=<your key>
-export WKEY=ctrl_r
+```bash
+pip install git+https://github.com/shimondoodkin/whisper-keyboard.git
 ```
 
-Run `wkey` in a terminal window to start listening. 
+### From source tree
 
-If there are issues, check the additional requirements.
-
-## Additional requirements
-
-Requirements differ depending on your OS.
-
-### Ubuntu
-
-You will need to install the portaudio library. 
-
-```shell
-sudo apt-get install portaudio19-dev 
+```bash
+git clone https://github.com/shimondoodkin/whisper-keyboard.git
+cd whisper-keyboard
+pip install -r requirements.txt
 ```
 
-### Mac
-You will need to authorize your terminal to use the microphone and keyboard. Go to System Settings > Privacy and Security. Then: 
-* Select Microphone and authorize your terminal.
-* Select Accessibility and authorize your terminal.
+---
 
-Restart the terminal for the changes to take effect. 
+## Configuration
 
-Note that this might entail security risks.
+Configure the app through environment variables (put them in `.env`, your shell profile, or the system environment):
+
+- `GROQ_API_KEY` or `OPENAI_API_KEY`: provide at least one. If both exist, Groq is preferred unless you set `WHISPER_BACKEND`.
+- `WHISPER_BACKEND` (optional): choose `groq`, `openai`, or any backend implemented in `wkey.whisper`.
+- `WKEY` (optional): pynput key name that toggles recording (default `ctrl_r`). Use the bundled `fkey` helper to discover key names.
+- `LLM_CORRECT` (optional): set to `true` to run transcripts through `llm_corrector`.
+- `CHINESE_CONVERSION` (optional): OpenCC conversion code such as `s2t`, `t2s`, etc.
+
+Example:
+
+```bash
+export GROQ_API_KEY=sk-...
+export WKEY=shift_r
+export WHISPER_BACKEND=groq
+```
+
+---
+
+## Usage
+
+### Terminal mode
+
+Run `wkey` (after installing via pip) or `python run_wkey.py` (inside the repo). You’ll see:
+
+```
+wkey is active. Hold down ctrl_r to start dictating.
+```
+
+- Hold the configured key: “Listening…” appears.
+- Release it: “Transcribing…” appears, then the processed transcript prints and is typed into the focused window.
+- Press `Ctrl+C` to exit cleanly.
+
+### System-tray mode
+
+Launch `wkey-tray` (pip) or `python -m wkey.tray_app` (repo clone).
+
+- A “W” icon appears in your notification area immediately; the listener runs in the background.
+- Click/double-click the icon to show the About dialog. It includes **Close** (hide dialog) and **Exit wkey** (stop the service).
+- Right-click the tray icon for a context menu with **About** and **Exit**.
+- Press `Ctrl+C` in the launching terminal to shut down the tray app as well.
+
+Both launchers share the same service code, so improvements carry over automatically.
+
+---
+
+## Running options
+
+After installing from **PyPI (or via `pip install git+...`)**:
+
+- CLI listener: `wkey`
+- Tray companion: `wkey-tray`
+
+When working from the **cloned repository**:
+
+- CLI listener: `python run_wkey.py` (or `python -m wkey`)
+- Tray companion: `python -m wkey.tray_app`
+
+## Create API accounts
+
+1. **Groq** – visit https://console.groq.com/, create an account, then open the API Keys page to generate a token. Set it as `GROQ_API_KEY`.
+2. **OpenAI** – visit https://platform.openai.com/, sign in, and create a secret key under View API Keys. Set it as `OPENAI_API_KEY`.
+
+If you enable both, set `WHISPER_BACKEND` to control which service is used.
+
+## Platform requirements
+
+### Ubuntu / Debian
+
+- Install PortAudio headers before `pip install sounddevice`:
+
+  ```bash
+  sudo apt-get install portaudio19-dev
+  ```
+
+### macOS
+
+- Grant microphone and accessibility permissions to the terminal or app hosting `wkey`.
+  - **System Settings → Privacy & Security → Microphone**: enable your terminal.
+  - **System Settings → Privacy & Security → Accessibility**: enable your terminal/app.
+- Restart the terminal after changing permissions.
 
 ### Windows
-Confirmed working on Windows with both the terminal and tray launchers. Make sure the app emitting keystrokes runs with the same privilege level (e.g., avoid mixing elevated and non-elevated windows).
 
-## Security risks
+- Confirmed working with both terminal and tray modes.
+- Ensure the target app and wkey run with the **same privilege level** (mixing Administrator/non-Administrator prevents synthetic keystrokes).
+- If you run `wkey` elevated, run the target editor elevated too, and vice versa.
 
-This script creates a recording with your microphone and sends the audio to the Whisper API. The Whisper API response will be automatically streamed to your keyboard and executed there. This might entail security risks. Use at your own risk. 
+---
+
+## Troubleshooting
+
+- **No keystrokes in the destination app** – verify privilege levels match and that no other macro/hotkey tools intercept the events.
+- **“Listening…” never appears** – double-check `WKEY` matches the key name from `fkey`, and that no other process is grabbing the key.
+- **Audio not captured** – confirm the default recording device is active; set `SOUNDDEVICE_DEVICE` (see `sounddevice` docs) if you need a specific input.
+- **Tray app won’t exit** – ensure you’re on the latest version; `Ctrl+C`, tray menu exit, and About dialog exit all share the same shutdown path now.
+
+Collect logs by running with `PYTHONWARNINGS=default` or adding prints in `wkey/wkey.py`.
+
+---
+
+## Security considerations
+
+- Audio is recorded locally but sent to the selected Whisper backend for transcription. Treat dictated content as sensitive.
+- The resulting text is typed directly into the active application. Malicious prompts could trigger shortcuts or commands. Keep the hotkey pressed only while dictating trusted content.
+- Grant microphone/keyboard accessibility permissions only to applications you trust, and review them periodically.
+
+---
+
+## Contributing
+
+Pull requests and bug reports are welcome on https://github.com/shimondoodkin/whisper-keyboard. Ideas for improvement:
+
+- Multi-language hotkey support
+- Configurable output destinations (clipboard + typing)
+- Pause/resume buttons in the tray UI
+
+Open an issue describing the change before large rewrites, and run lint/tests where applicable. Use `git commit -s` if you require signed commits.
+
+---
+
+## License
+
+MIT © Vlad Gheorghe. Use at your own risk; API usage incurs the costs associated with your chosen Whisper provider (roughly $0.36/hour for OpenAI at the time of writing).
