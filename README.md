@@ -123,7 +123,7 @@ Either method launches the tray app at login with no visible console window.
 
 ## Create API accounts
 
-1. **Groq** – visit https://console.groq.com/, create an account, then open the API Keys page to generate a token. Set it as `GROQ_API_KEY`.
+1. **Groq** – visit https://console.groq.com/, create an account, then open the API Keys page to generate a token. Groq currently offers a free API tier, so transcription can be effectively free. Set it as `GROQ_API_KEY`.
 2. **OpenAI** – visit https://platform.openai.com/, sign in, and create a secret key under View API Keys. Set it as `OPENAI_API_KEY`.
 
 If you enable both, set `WHISPER_BACKEND` to control which service is used.
