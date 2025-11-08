@@ -19,6 +19,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "groq_api_key": "",
     "openai_api_key": "",
     "llm_correct": False,
+    "llm_provider": "openai",
     "llm_prompt": "",
     "chinese_conversion": "",
 }
@@ -66,14 +67,13 @@ def apply_settings(settings: Dict[str, Any], clear_missing: bool = False) -> Non
         "GROQ_API_KEY": settings.get("groq_api_key"),
         "OPENAI_API_KEY": settings.get("openai_api_key"),
         "LLM_CORRECT": "true" if settings.get("llm_correct") else "",
+        "LLM_CORRECT_PROVIDER": settings.get("llm_provider"),
         "LLM_CORRECT_PROMPT": settings.get("llm_prompt"),
         "CHINESE_CONVERSION": settings.get("chinese_conversion"),
     }
 
     def _resolved_value(env_key: str, candidate: Any) -> Any:
         """Prefer explicit setting; fall back to existing environment value."""
-        if candidate == "" and env_key in allow_empty:
-            return ""
         if candidate == "" and env_key in allow_empty:
             return ""
         if candidate not in ("", None):

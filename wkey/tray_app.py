@@ -158,6 +158,12 @@ class SettingsDialog(QDialog):
         self.llm_checkbox.toggled.connect(self._update_llm_controls)
         form.addRow("", self.llm_checkbox)
 
+        self.llm_provider_combo = QComboBox()
+        self.llm_provider_combo.addItem("OpenAI (use OPENAI_API_KEY)", "openai")
+        self.llm_provider_combo.addItem("Groq (use GROQ_API_KEY)", "groq")
+        self.llm_provider_combo.currentIndexChanged.connect(lambda _: self._update_llm_controls())
+        form.addRow("LLM provider", self.llm_provider_combo)
+
         self.llm_prompt_input = QTextEdit()
         self.llm_prompt_input.setPlaceholderText("Optional: custom LLM instructions for post-processing.")
         self.llm_prompt_input.setFixedHeight(80)
@@ -174,7 +180,7 @@ class SettingsDialog(QDialog):
         prompt_widget = QWidget()
         prompt_widget.setLayout(prompt_layout)
         form.addRow("LLM prompt", prompt_widget)
-        self._update_llm_controls(self.llm_checkbox.isChecked())
+        self._update_llm_controls()
 
         self.chinese_combo = QComboBox()
         self.chinese_combo.addItem("Disabled", "")
@@ -235,6 +241,7 @@ class SettingsDialog(QDialog):
             "enable_keyboard_shortcut": self.keyboard_enabled_checkbox.isChecked(),
             "enable_mouse_shortcut": self.mouse_enabled_checkbox.isChecked(),
             "llm_correct": self.llm_checkbox.isChecked(),
+            "llm_provider": self.llm_provider_combo.currentData(),
             "llm_prompt": self.llm_prompt_input.toPlainText().strip(),
             "chinese_conversion": self.chinese_combo.currentData() or "",
         }
@@ -254,8 +261,11 @@ class SettingsDialog(QDialog):
         self.mouse_button_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.mouse_enabled_checkbox.setChecked(bool(settings.get("enable_mouse_shortcut", True)))
         self.llm_checkbox.setChecked(bool(settings.get("llm_correct")))
-        self._update_llm_controls(self.llm_checkbox.isChecked())
+        provider_value = settings.get("llm_provider", "openai")
+        idx = self.llm_provider_combo.findData(provider_value)
+        self.llm_provider_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.llm_prompt_input.setPlainText(settings.get("llm_prompt", "").strip())
+        self._update_llm_controls()
         conversion_value = settings.get("chinese_conversion", "")
         idx = self.chinese_combo.findData(conversion_value)
         self.chinese_combo.setCurrentIndex(idx if idx >= 0 else 0)
@@ -366,9 +376,12 @@ class SettingsDialog(QDialog):
     def _reset_llm_prompt(self):
         self.llm_prompt_input.setPlainText(DEFAULT_PROMPT.strip())
 
-    def _update_llm_controls(self, enabled: bool):
+    def _update_llm_controls(self, enabled=None):
+        if enabled is None:
+            enabled = self.llm_checkbox.isChecked()
         self.llm_prompt_input.setEnabled(enabled)
         self.reset_prompt_button.setEnabled(enabled)
+        self.llm_provider_combo.setEnabled(enabled)
 
     def _drain_key_queue(self):
         updated = False
@@ -532,6 +545,10 @@ class TrayController:
             llm_env = os.environ.get("LLM_CORRECT")
             if llm_env is not None:
                 values["llm_correct"] = llm_env.lower() in ("1", "true", "yes", "on")
+            provider = os.environ.get("LLM_CORRECT_PROVIDER", values.get("llm_provider", "openai"))
+            if provider not in {"openai", "groq"}:
+                provider = "openai"
+            values["llm_provider"] = provider
             values["llm_prompt"] = os.environ.get("LLM_CORRECT_PROMPT", values.get("llm_prompt", ""))
             values["chinese_conversion"] = os.environ.get("CHINESE_CONVERSION", values.get("chinese_conversion", ""))
         return values

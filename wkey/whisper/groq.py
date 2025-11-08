@@ -51,3 +51,14 @@ def apply_whisper(audio_source, mode: str) -> str:
 
     return response.text
 
+
+def run_chat_completion(messages, model=None, temperature=0.0, max_tokens=1024):
+    client = _get_client()
+    completion = client.chat.completions.create(
+        model=model or "qwen/qwen3-32b",
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    return completion.choices[0].message.content.strip()
+

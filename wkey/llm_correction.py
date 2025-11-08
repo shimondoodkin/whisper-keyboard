@@ -1,7 +1,9 @@
 import os
-import requests
 from collections import deque
 from textwrap import dedent
+
+from wkey.whisper import groq as groq_provider
+from wkey.whisper import openai as openai_provider
 
 
 DEFAULT_PROMPT = dedent(
@@ -16,15 +18,25 @@ def _prompt_template():
     return os.getenv("LLM_CORRECT_PROMPT", DEFAULT_PROMPT).strip() or DEFAULT_PROMPT
 
 
+def _resolve_llm_runner():
+    provider = os.getenv("LLM_CORRECT_PROVIDER", "openai").lower()
+    custom_model = os.getenv("LLM_CORRECT_MODEL")
+
+    if provider == "groq":
+        model = custom_model or "qwen/qwen3-32b"
+        return lambda messages: groq_provider.run_chat_completion(messages, model=model)
+
+    # default to OpenAI
+    model = custom_model or "gpt-5-mini"
+    return lambda messages: openai_provider.run_chat_completion(messages, model=model)
+
+
 def create_llm_corrector():
     """
     Creates an LLM text corrector that maintains a history of the last 10 transcripts.
     """
     history = deque(maxlen=10)
-    
-    api_url = os.getenv("LLM_CORRECT_API_URL")
-    api_key = os.getenv("LLM_CORRECT_API_KEY")
-    model = os.getenv("LLM_CORRECT_MODEL", "gpt-4")
+    runner = _resolve_llm_runner()
 
     def corrector(transcript: str) -> str:
         """
@@ -52,39 +64,23 @@ def create_llm_corrector():
             """
         )
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.0,
-            "max_tokens": 4096,
-            "stop": ["\n"]
-        }
-
         try:
             print("Correcting...")
-            response = requests.post(api_url, headers=headers, json=payload, timeout=10)
-            response.raise_for_status()
-            
-            corrected_transcript = response.json()["choices"][0]["message"]["content"].strip()
+            corrected_transcript = runner(
+                [
+                    {"role": "system", "content": instructions},
+                    {"role": "user", "content": prompt},
+                ]
+            )
             
             # Add the corrected transcript to the history for the next turn's context.
             history.append(corrected_transcript)
             
             return corrected_transcript
 
-        except requests.RequestException as e:
+        except Exception as e:
             print(f"Error calling LLM API: {e}")
-            return transcript # Return original transcript on error
-        except (KeyError, IndexError) as e:
-            print(f"Error parsing LLM response: {e}")
-            return transcript # Return original transcript on error
+            return transcript  # Return original transcript on error
 
     return corrector
 
