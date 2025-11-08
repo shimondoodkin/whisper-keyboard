@@ -183,7 +183,3 @@ Pull requests and bug reports are welcome on https://github.com/shimondoodkin/wh
 Open an issue describing the change before large rewrites, and run lint/tests where applicable. Use `git commit -s` if you require signed commits.
 
 ---
-
-## License
-
-MIT © Vlad Gheorghe. Use at your own risk; API usage incurs the costs associated with your chosen Whisper provider (roughly $0.36/hour for OpenAI at the time of writing).

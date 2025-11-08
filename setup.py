@@ -1,12 +1,7 @@
+from pathlib import Path
 from setuptools import setup, find_packages
 
-def readme():
-    with open('README.md') as f:
-        return f.read()
-
-
-with open('README.rst') as f:
-    long_description = f.read()
+long_description = Path('README.md').read_text(encoding='utf-8')
 
 with open('requirements.txt') as f:
     required = f.read().splitlines()
@@ -17,9 +12,8 @@ setup(
     description='Integrate OpenAI speech-to-text Whisper with your keyboard',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    url='https://github.com/vlad-ds/whisper-keyboard',
-    author='Vlad Gheorghe',
-    author_email='vlad.datapro@gmail.com',
+    url='https://github.com/shimondoodkin/whisper-keyboard',
+    author='shimondoodkin',
     license='MIT',
     packages=find_packages(include=('wkey', 'wkey.*')),
     entry_points={
