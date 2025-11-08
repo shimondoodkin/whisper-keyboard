@@ -200,12 +200,50 @@ recording = False
 # This is where we'll store the audio (as bytes)
 audio_data = []
 audio_lock = threading.Lock()
+audio_stream_lock = threading.Lock()
+audio_stream = None
 
 # This is the sample rate for the audio
 sample_rate = 16000
 
 # Keyboard controller
 keyboard_controller = KeyboardController()
+
+
+def _start_audio_capture():
+    """Start microphone stream only when recording begins."""
+    global audio_stream
+    with audio_stream_lock:
+        if audio_stream is not None:
+            return True
+        try:
+            stream = sd.RawInputStream(callback=callback, channels=1, samplerate=sample_rate, dtype='int16')
+            stream.start()
+            audio_stream = stream
+            return True
+        except Exception as exc:
+            audio_stream = None
+            _report_error("Failed to start audio capture", exc)
+            return False
+
+
+def _stop_audio_capture():
+    """Stop the microphone stream when dictation ends."""
+    global audio_stream
+    with audio_stream_lock:
+        stream = audio_stream
+        audio_stream = None
+    if stream is None:
+        return
+    try:
+        stream.stop()
+    except Exception as exc:
+        _report_error("Failed to stop audio capture", exc)
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
 
 
 def _hotkey_active():
@@ -328,6 +366,8 @@ def _maybe_start_recording():
     global recording, audio_data
     if recording or paused or not _triggers_active():
         return
+    if not _start_audio_capture():
+        return
     recording = True
     with audio_lock:
         audio_data = []
@@ -340,6 +380,7 @@ def _maybe_stop_recording():
         return
     recording = False
     print("Transcribing...")
+    _stop_audio_capture()
 
     with audio_lock:
         audio_chunks = audio_data[:]
@@ -394,24 +435,23 @@ def run(stop_event=None, install_sigint_handler=True):
         signal.signal(signal.SIGINT, _handle_sigint)
 
     try:
-        # Use RawInputStream to get bytes directly, avoiding numpy conversion
-        with sd.RawInputStream(callback=callback, channels=1, samplerate=sample_rate, dtype='int16'):
-            try:
-                while listener.is_alive():
-                    if internal_event.is_set():
-                        listener.stop()
-                        break
-                    time.sleep(0.1)
-            except KeyboardInterrupt:
-                if install_sigint_handler:
-                    _handle_sigint(signal.SIGINT, None)
-                else:
-                    internal_event.set()
+        try:
+            while listener.is_alive():
+                if internal_event.is_set():
                     listener.stop()
+                    break
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            if install_sigint_handler:
+                _handle_sigint(signal.SIGINT, None)
+            else:
+                internal_event.set()
+                listener.stop()
     finally:
         internal_event.set()
         listener.stop()
         listener.join()
+        _stop_audio_capture()
         if mouse_listener:
             mouse_listener.stop()
             mouse_listener.join()
@@ -437,6 +477,9 @@ def set_paused(value: bool):
     paused = value
     if paused and recording:
         recording = False
+        _stop_audio_capture()
+        with audio_lock:
+            audio_data = []
 
 
 def stop_service(stop_event, thread=None, timeout=5):
@@ -445,6 +488,7 @@ def stop_service(stop_event, thread=None, timeout=5):
         stop_event.set()
     if thread:
         thread.join(timeout=timeout)
+    _stop_audio_capture()
 
 
 def main():
