@@ -3,20 +3,96 @@ import os
 import signal
 import threading
 import time
+import traceback
 import wave
 
 from dotenv import load_dotenv
 import sounddevice as sd
-from pynput.keyboard import Controller as KeyboardController, Key, Listener
+from pynput.keyboard import Controller as KeyboardController, Key, Listener, KeyCode
 
+from wkey.config import SETTINGS_PATH, apply_settings, load_settings
 from wkey.whisper import apply_whisper
 from wkey.utils import process_transcript, convert_chinese
 from wkey.llm_correction import llm_corrector
 
 load_dotenv()
-key_label = os.environ.get("WKEY", "ctrl_r")
-RECORD_KEY = Key[key_label]
+current_settings, has_user_overrides = load_settings()
+if has_user_overrides:
+    apply_settings(current_settings, clear_missing=True)
+
+key_label = os.environ.get("WKEY", current_settings.get("hotkey", "ctrl_r"))
 CHINESE_CONVERSION = os.environ.get("CHINESE_CONVERSION")
+
+HOTKEY_PARTS = set()
+pressed_keys = set()
+paused = False
+
+def _parse_hotkey(label: str):
+    parts = []
+    for raw in label.split("+"):
+        part = raw.strip()
+        if not part:
+            continue
+        if len(part) == 1:
+            parts.append(part.lower())
+        else:
+            try:
+                Key[part]
+            except KeyError:
+                raise ValueError(f"Unknown key name '{part}'")
+            parts.append(part)
+    if not parts:
+        raise ValueError("Hotkey must include at least one key")
+    return parts
+
+def _key_name(key):
+    if isinstance(key, Key):
+        return key.name
+    if isinstance(key, KeyCode) and key.char:
+        return key.char.lower()
+    return None
+
+def _set_record_key(label: str):
+    global key_label, HOTKEY_PARTS
+    try:
+        parts = set(_parse_hotkey(label))
+        HOTKEY_PARTS = parts
+        pressed_keys.clear()
+        key_label = label
+        os.environ["WKEY"] = label
+        print(f"Set recording hotkey to {label}")
+    except ValueError as exc:
+        _report_error(f"Invalid hotkey '{label}': {exc}. Keeping previous key: {key_label}.")
+
+_set_record_key(key_label)
+
+_error_handler = None
+
+def set_error_handler(handler):
+    global _error_handler
+    _error_handler = handler
+
+def _report_error(message, exc=None):
+    if exc:
+        print(f"{message}: {exc}")
+        traceback.print_exception(type(exc), exc, exc.__traceback__)
+    else:
+        print(message)
+    if _error_handler:
+        try:
+            _error_handler(message if not exc else f"{message}: {exc}")
+        except Exception:
+            pass
+
+
+def refresh_configuration(settings=None, clear_missing=True):
+    """Reapply configuration (hotkey + conversions) from provided settings or env."""
+    global CHINESE_CONVERSION
+    if settings:
+        apply_settings(settings, clear_missing=clear_missing)
+    hotkey = os.environ.get("WKEY", (settings or {}).get("hotkey", key_label))
+    _set_record_key(hotkey)
+    CHINESE_CONVERSION = os.environ.get("CHINESE_CONVERSION")
 
 # This flag determines when to record
 recording = False
@@ -49,12 +125,13 @@ def _record_and_transcribe(audio_chunks):
         wf.writeframes(all_audio_bytes)
 
     audio_buffer.seek(0)
+    audio_buffer.name = "recording.wav"
 
     try:
         transcript = apply_whisper(audio_buffer, 'transcribe')
         return transcript
     except Exception as e:
-        print(f"Error during transcription: {e}")
+        _report_error("Error during transcription", e)
         return None
 
 def _process_and_type_transcript(transcript: str):
@@ -77,8 +154,15 @@ def _process_and_type_transcript(transcript: str):
 def on_press(key):
     global recording
     global audio_data
-    
-    if key == RECORD_KEY and not recording:
+    global pressed_keys
+    if paused:
+        return
+
+    name = _key_name(key)
+    if name:
+        pressed_keys.add(name)
+
+    if (not recording) and HOTKEY_PARTS.issubset(pressed_keys):
         recording = True
         with audio_lock:
             audio_data = []
@@ -87,11 +171,15 @@ def on_press(key):
 def on_release(key):
     global recording
     global audio_data
-    
-    if key != RECORD_KEY:
+    global pressed_keys
+    if paused:
         return
 
-    if not recording:
+    name = _key_name(key)
+    if name:
+        pressed_keys.discard(name)
+
+    if not recording or HOTKEY_PARTS.issubset(pressed_keys):
         return
 
     recording = False
@@ -167,6 +255,18 @@ def start_service():
     thread = threading.Thread(target=run, kwargs={"stop_event": stop_event, "install_sigint_handler": False}, daemon=True)
     thread.start()
     return stop_event, thread
+
+
+def set_paused(value: bool):
+    """Enable/disable dictation without stopping the service."""
+    global paused, recording
+    if value and not paused:
+        print("Dictation paused.")
+    elif not value and paused:
+        print("Dictation resumed.")
+    paused = value
+    if paused and recording:
+        recording = False
 
 
 def stop_service(stop_event, thread=None, timeout=5):

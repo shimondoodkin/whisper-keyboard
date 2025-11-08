@@ -42,7 +42,7 @@ pip install -r requirements.txt
 
 ## Configuration
 
-Configure the app through environment variables (put them in `.env`, your shell profile, or the system environment):
+Configure the app through environment variables (put them in `.env`, your shell profile, or the system environment) **or** via the persistent settings file stored at `~/.wkey.json`. The tray application’s Settings dialog edits this file; whenever it exists, wkey prints the full path that is being loaded. If the file is empty, wkey falls back to the current environment variables rather than overwriting them.
 
 - `GROQ_API_KEY` or `OPENAI_API_KEY`: provide at least one. If both exist, Groq is preferred unless you set `WHISPER_BACKEND`.
 - `WHISPER_BACKEND` (optional): choose `groq`, `openai`, or any backend implemented in `wkey.whisper`.
@@ -78,9 +78,9 @@ wkey is active. Hold down ctrl_r to start dictating.
 
 Launch `wkey-tray` (pip) or `python -m wkey.tray_app` (repo clone).
 
-- A “W” icon appears in your notification area immediately; the listener runs in the background.
-- Click/double-click the icon to show the About dialog. It includes **Close** (hide dialog) and **Exit wkey** (stop the service).
-- Right-click the tray icon for a context menu with **About** and **Exit**.
+- A "W" icon appears in your notification area immediately; the listener runs in the background.
+- Click/double-click the icon to open the Settings dialog: edit Groq/OpenAI keys, pick a backend and hotkey (with live key-capture history, including left/right modifier combos like `ctrl_r+shift_r`), toggle LLM correction, set Chinese conversion, and Apply/Save without restarting; dictation auto-pauses while the dialog is open so your capture presses don't trigger recordings.
+- Right-click the tray icon for a context menu with **Settings**, **Pause dictation**, and **Exit**.
 - Press `Ctrl+C` in the launching terminal to shut down the tray app as well.
 
 Both launchers share the same service code, so improvements carry over automatically.
@@ -111,7 +111,7 @@ Make sure `pythonw.exe` points to the same interpreter where you installed `wkey
 
 ### Windows auto-start options
 
-- **Startup folder**: create a shortcut in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup` that targets `pythonw.exe -m wkey.tray_app`. Set “Start in” to the folder containing your `.env` file if needed.
+- **Startup folder**: create a shortcut in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup` that targets `pythonw.exe -m wkey.tray_app`. Set "Start in" to the folder containing your `.env` file if needed, or rely on `%USERPROFILE%\.wkey.json` for configuration.
 - **Task Scheduler**:
   1. Open Task Scheduler → “Create Task…”.
   2. “Run only when user is logged on” (ensures tray icon is visible) and check “Run with highest privileges” if you plan to dictate into elevated apps.

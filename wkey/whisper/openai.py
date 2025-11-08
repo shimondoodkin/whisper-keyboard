@@ -5,12 +5,16 @@ from dotenv import load_dotenv
 from .io_utils import open_audio_source
 
 load_dotenv()
-openai.api_key = os.environ["OPENAI_API_KEY"]
-WHISPER_MODEL = "whisper-1"
+WHISPER_MODEL = os.environ.get("OPENAI_WHISPER_MODEL", "whisper-1")
 
 def apply_whisper(audio_source, mode: str) -> str:
     if mode not in ("translate", "transcribe"):
         raise ValueError(f"Invalid mode: {mode}")
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not set.")
+    openai.api_key = api_key
 
     prompt = "Hello, this is a properly structured message. GPT, ChatGPT."
     
