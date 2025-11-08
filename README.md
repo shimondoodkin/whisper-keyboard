@@ -12,21 +12,26 @@ You will incur costs for Whisper API. Currently, it costs $0.36 for 1 hour of tr
 
 ## Setup
 
-Install the package.
+Install the package from PyPI or run it directly from the source tree.
 
 ```shell
 pip install wkey
 ```
 
-You will need to set two environment variables:
+To try it locally without installing, clone/download this repo, install the dependencies from `requirements.txt`, then either run:
 
-- OPENAI_API_KEY: your personal OpenAI API key. You can get it by signing up here: https://platform.openai.com/
+- `python run_wkey.py` (terminal mode), or
+- `python -m wkey.tray_app` to launch the new system-tray companion that keeps wkey running in the background. The tray icon stays in the notification area; click it to see an About dialog with Close/Exit buttons.
+
+You will need to set a couple of environment variables:
+
+- GROQ_API_KEY or OPENAI_API_KEY: provide at least one. If both are set, Groq will be used by default unless you override `WHISPER_BACKEND`.
 - WKEY: the keyboard key you want to use to start recording. By default, it is set to right ctrl. You can use any key. Note that Mac and Windows might have different key codes. You can run `fkey` to find the code of the key you want to use.
 
 You can set the environment variables in your shell:
 
 ```shell
-export OPENAI_API_KEY=<your key>
+export GROQ_API_KEY=<your key>  # or OPENAI_API_KEY=<your key>
 export WKEY=ctrl_r
 ```
 
@@ -56,7 +61,7 @@ Restart the terminal for the changes to take effect.
 Note that this might entail security risks.
 
 ### Windows
-Haven't tested it on Windows yet. If you do, please let me know how it goes.
+Confirmed working on Windows with both the terminal and tray launchers. Make sure the app emitting keystrokes runs with the same privilege level (e.g., avoid mixing elevated and non-elevated windows).
 
 ## Security risks
 

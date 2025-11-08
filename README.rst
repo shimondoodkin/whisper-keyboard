@@ -18,19 +18,21 @@ Install the package.
 pip install wkey
 ```
 
-You will need to set two environment variables:
+You will need to set a couple of environment variables:
 
-- OPENAI_API_KEY: your personal OpenAI API key. You can get it by signing up here: https://platform.openai.com/
+- GROQ_API_KEY or OPENAI_API_KEY: provide at least one. If both are set, Groq will be used by default unless you override `WHISPER_BACKEND`.
 - WKEY: the keyboard key you want to use to start recording. By default, it is set to right ctrl. You can use any key. Note that Mac and Windows might have different key codes. You can run `fkey` to find the code of the key you want to use.
 
 You can set the environment variables in your shell:
 
 ```shell
-export OPENAI_API_KEY=<your key>
+export GROQ_API_KEY=<your key>  # or OPENAI_API_KEY=<your key>
 export WKEY=ctrl_r
 ```
 
 Run `wkey` in a terminal window to start listening. 
+
+To try it directly from the repo without installation, install `requirements.txt` and run either `python run_wkey.py` (terminal) or `python -m wkey.tray_app` for the background system-tray companion. Clicking the tray icon reveals an About dialog with Close and Exit buttons so you can keep wkey running quietly.
 
 If there are issues, check the additional requirements.
 
@@ -56,7 +58,7 @@ Restart the terminal for the changes to take effect.
 Note that this might entail security risks.
 
 ### Windows
-Haven't tested it on Windows yet. If you do, please let me know how it goes.
+Confirmed working on Windows with both the terminal and tray launchers. Ensure the programs receiving the synthesized keystrokes are running with the same privilege level as wkey.
 
 ## Security risks
 

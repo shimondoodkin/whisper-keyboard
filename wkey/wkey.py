@@ -1,4 +1,7 @@
 import os
+import signal
+import threading
+import time
 import wave
 
 from dotenv import load_dotenv
@@ -10,7 +13,7 @@ from wkey.utils import process_transcript, convert_chinese
 from wkey.llm_correction import llm_corrector
 
 load_dotenv()
-key_label = os.environ.get("WKEY", "alt_l")
+key_label = os.environ.get("WKEY", "ctrl_r")
 RECORD_KEY = Key[key_label]
 CHINESE_CONVERSION = os.environ.get("CHINESE_CONVERSION")
 
@@ -19,6 +22,7 @@ recording = False
 
 # This is where we'll store the audio (as bytes)
 audio_data = []
+audio_lock = threading.Lock()
 
 # This is the sample rate for the audio
 sample_rate = 16000
@@ -27,16 +31,14 @@ sample_rate = 16000
 keyboard_controller = KeyboardController()
 
 
-def _record_and_transcribe():
+def _record_and_transcribe(audio_chunks):
     """Saves recorded audio and returns the transcript."""
-    global audio_data
-    
-    if not audio_data:
+    if not audio_chunks:
         print("No audio data recorded, probably because the key was pressed for too short a time.")
         return None
 
     # Join the bytes chunks
-    all_audio_bytes = b''.join(audio_data)
+    all_audio_bytes = b''.join(audio_chunks)
     
     # Write to a WAV file using the standard 'wave' module
     with wave.open('recording.wav', 'wb') as wf:
@@ -73,24 +75,35 @@ def on_press(key):
     global recording
     global audio_data
     
-    if key == RECORD_KEY:
+    if key == RECORD_KEY and not recording:
         recording = True
-        audio_data = []
+        with audio_lock:
+            audio_data = []
         print("Listening...")
 
 def on_release(key):
     global recording
+    global audio_data
     
     if key != RECORD_KEY:
         return
 
+    if not recording:
+        return
+
     recording = False
     print("Transcribing...")
-    
-    transcript = _record_and_transcribe()
-    
-    if transcript:
-        _process_and_type_transcript(transcript)
+
+    with audio_lock:
+        audio_chunks = audio_data[:]
+        audio_data = []
+
+    def worker(chunks):
+        transcript = _record_and_transcribe(chunks)
+        if transcript:
+            _process_and_type_transcript(transcript)
+
+    threading.Thread(target=worker, args=(audio_chunks,), daemon=True).start()
 
 
 def callback(indata, frames, time, status):
@@ -98,15 +111,72 @@ def callback(indata, frames, time, status):
     if status:
         print(status)
     if recording:
-        audio_data.append(indata) # indata is already a bytes object
+        # Copy the bytes because RawInputStream reuses the buffer
+        with audio_lock:
+            audio_data.append(bytes(indata))
+
+
+def run(stop_event=None, install_sigint_handler=True):
+    """Runs the listener/audio loop until stop_event is set."""
+    print(f"wkey is active. Hold down {key_label} to start dictating.")
+    internal_event = stop_event or threading.Event()
+
+    listener = Listener(on_press=on_press, on_release=on_release)
+    listener.start()
+
+    def _handle_sigint(signum, frame):
+        """Allow Ctrl+C to stop the listener and exit cleanly."""
+        print("\nReceived Ctrl+C, shutting down...")
+        internal_event.set()
+        listener.stop()
+
+    previous_handler = None
+    if install_sigint_handler:
+        previous_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, _handle_sigint)
+
+    try:
+        # Use RawInputStream to get bytes directly, avoiding numpy conversion
+        with sd.RawInputStream(callback=callback, channels=1, samplerate=sample_rate, dtype='int16'):
+            try:
+                while listener.is_alive():
+                    if internal_event.is_set():
+                        listener.stop()
+                        break
+                    time.sleep(0.1)
+            except KeyboardInterrupt:
+                if install_sigint_handler:
+                    _handle_sigint(signal.SIGINT, None)
+                else:
+                    internal_event.set()
+                    listener.stop()
+    finally:
+        internal_event.set()
+        listener.stop()
+        listener.join()
+        if install_sigint_handler and previous_handler is not None:
+            signal.signal(signal.SIGINT, previous_handler)
+
+
+def start_service():
+    """Starts the wkey service in a background thread."""
+    stop_event = threading.Event()
+    thread = threading.Thread(target=run, kwargs={"stop_event": stop_event, "install_sigint_handler": False}, daemon=True)
+    thread.start()
+    return stop_event, thread
+
+
+def stop_service(stop_event, thread=None, timeout=5):
+    """Stops the background service started via start_service."""
+    if stop_event:
+        stop_event.set()
+    if thread:
+        thread.join(timeout=timeout)
 
 
 def main():
-    print(f"wkey is active. Hold down {key_label} to start dictating.")
-    with Listener(on_press=on_press, on_release=on_release) as listener:
-        # Use RawInputStream to get bytes directly, avoiding numpy conversion
-        with sd.RawInputStream(callback=callback, channels=1, samplerate=sample_rate, dtype='int16'):
-            listener.join()
+    run()
+
 
 if __name__ == "__main__":
     main()
