@@ -6,7 +6,7 @@ import threading
 
 from queue import Queue
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon, QPainter, QPixmap, QColor, QFont
 from PySide6.QtWidgets import (
     QApplication,
@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from pynput import keyboard as pynput_keyboard
+from pynput import keyboard as pynput_keyboard, mouse as pynput_mouse
 
 from wkey.config import (
     SETTINGS_PATH,
@@ -59,6 +59,7 @@ def _build_default_icon():
 
 
 class SettingsDialog(QDialog):
+    mousePracticeDetected = Signal(str)
     """Dialog for viewing basic info and editing settings."""
 
     def __init__(self, settings, save_callback, exit_callback, close_callback, parent=None):
@@ -68,6 +69,7 @@ class SettingsDialog(QDialog):
         self.close_callback = close_callback
         self.current_settings = settings.copy()
         self.listener = None
+        self.mouse_listener = None
         self.pressed_keys = set()
         self.key_queue: Queue[str] = Queue()
         self.recent_keys = []
@@ -102,14 +104,30 @@ class SettingsDialog(QDialog):
         form.addRow("Whisper backend", self.backend_combo)
 
         self.hotkey_input = QLineEdit()
-        form.addRow("Hotkey", self.hotkey_input)
+        hotkey_row = QHBoxLayout()
+        hotkey_row.addWidget(self.hotkey_input)
+        self.keyboard_enabled_checkbox = QCheckBox("Enable")
+        hotkey_row.addWidget(self.keyboard_enabled_checkbox)
+        form.addRow("Keyboard shortcut", hotkey_row)
 
         self.mouse_button_combo = QComboBox()
         self.mouse_button_combo.addItem("Disabled", "")
         self.mouse_button_combo.addItem("Middle mouse", "middle")
         self.mouse_button_combo.addItem("Thumb button 1 (Mouse 4)", "x1")
         self.mouse_button_combo.addItem("Thumb button 2 (Mouse 5)", "x2")
-        form.addRow("Mouse button trigger", self.mouse_button_combo)
+        mouse_row = QHBoxLayout()
+        mouse_row.addWidget(self.mouse_button_combo)
+        self.mouse_enabled_checkbox = QCheckBox("Enable")
+        mouse_row.addWidget(self.mouse_enabled_checkbox)
+        form.addRow("Mouse trigger", mouse_row)
+
+        self.mouse_practice_label = QLabel("Press a mouse button to preview")
+        self.mouse_practice_label.setAlignment(Qt.AlignCenter)
+        self.mouse_practice_label.setMinimumHeight(60)
+        self.mouse_practice_label.setStyleSheet(
+            "border: 1px dashed #888; border-radius: 6px; color: #333; font-size: 13px; padding: 8px;"
+        )
+        form.addRow("Mouse practice", self.mouse_practice_label)
 
         self.llm_checkbox = QCheckBox("Enable LLM correction")
         form.addRow("", self.llm_checkbox)
@@ -158,20 +176,28 @@ class SettingsDialog(QDialog):
         layout.addLayout(button_row)
         self.setLayout(layout)
 
+        self.mousePracticeDetected.connect(self._apply_mouse_pad)
+
         self.key_timer = QTimer(self)
         self.key_timer.setInterval(150)
         self.key_timer.timeout.connect(self._drain_key_queue)
         self.key_timer.start()
+        self._start_mouse_practice()
 
         self.load_from_settings(settings)
 
     def _collect_settings(self):
+        hotkey_value = self.hotkey_input.text().strip()
+        if not hotkey_value:
+            hotkey_value = "ctrl_r" if self.keyboard_enabled_checkbox.isChecked() else ""
         return {
             "groq_api_key": self.groq_input.text().strip(),
             "openai_api_key": self.openai_input.text().strip(),
             "whisper_backend": self.backend_combo.currentText().strip(),
-            "hotkey": self.hotkey_input.text().strip() or "ctrl_r",
+            "hotkey": hotkey_value,
             "mouse_button": self.mouse_button_combo.currentData() or "",
+            "enable_keyboard_shortcut": self.keyboard_enabled_checkbox.isChecked(),
+            "enable_mouse_shortcut": self.mouse_enabled_checkbox.isChecked(),
             "llm_correct": self.llm_checkbox.isChecked(),
             "chinese_conversion": self.chinese_input.text().strip(),
         }
@@ -185,9 +211,11 @@ class SettingsDialog(QDialog):
         index = self.backend_combo.findText(backend_value)
         self.backend_combo.setCurrentIndex(index if index >= 0 else 0)
         self.hotkey_input.setText(settings.get("hotkey", "ctrl_r"))
+        self.keyboard_enabled_checkbox.setChecked(bool(settings.get("enable_keyboard_shortcut", True)))
         mouse_value = settings.get("mouse_button", "")
         idx = self.mouse_button_combo.findData(mouse_value)
         self.mouse_button_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.mouse_enabled_checkbox.setChecked(bool(settings.get("enable_mouse_shortcut", True)))
         self.llm_checkbox.setChecked(bool(settings.get("llm_correct")))
         self.chinese_input.setText(settings.get("chinese_conversion", ""))
 
@@ -225,6 +253,23 @@ class SettingsDialog(QDialog):
             self.listener = None
         self.pressed_keys.clear()
 
+    def _start_mouse_practice(self):
+        if self.mouse_listener and self.mouse_listener.running:
+            return
+        self.mouse_listener = pynput_mouse.Listener(on_click=self._on_mouse_practice)
+        self.mouse_listener.start()
+
+    def _stop_mouse_practice(self):
+        if self.mouse_listener:
+            self.mouse_listener.stop()
+            self.mouse_listener = None
+
+    def ensure_mouse_practice(self):
+        self._start_mouse_practice()
+
+    def stop_mouse_practice(self):
+        self._stop_mouse_practice()
+
     def _on_key_press(self, key):
         if not hasattr(self, "pressed_keys"):
             self.pressed_keys = set()
@@ -241,6 +286,12 @@ class SettingsDialog(QDialog):
         if label and label in self.pressed_keys:
             self.pressed_keys.remove(label)
 
+    def _on_mouse_practice(self, x, y, button, pressed):
+        if not pressed:
+            return
+        label = self._format_mouse_button(button)
+        self._update_mouse_pad(label)
+
     @staticmethod
     def _key_name(key):
         if isinstance(key, pynput_keyboard.Key):
@@ -253,6 +304,23 @@ class SettingsDialog(QDialog):
     def _format_combo(key_names):
         ordering = sorted(key_names, key=lambda k: (0, k) if len(k) > 1 else (1, k))
         return "+".join(ordering)
+
+    @staticmethod
+    def _format_mouse_button(button):
+        mapping = {
+            pynput_mouse.Button.left: "left",
+            pynput_mouse.Button.right: "right",
+            pynput_mouse.Button.middle: "middle",
+            pynput_mouse.Button.x1: "x1 (mouse 4)",
+            pynput_mouse.Button.x2: "x2 (mouse 5)",
+        }
+        return mapping.get(button, str(button))
+
+    def _update_mouse_pad(self, label: str):
+        self.mousePracticeDetected.emit(f"Detected: {label}")
+
+    def _apply_mouse_pad(self, text: str):
+        self.mouse_practice_label.setText(text)
 
     def _drain_key_queue(self):
         updated = False
@@ -280,6 +348,7 @@ class SettingsDialog(QDialog):
     def closeEvent(self, event):
         self.capture_button.setChecked(False)
         self._stop_listener()
+        self.stop_mouse_practice()
         self.key_timer.stop()
         self._notify_closed()
         super().closeEvent(event)
@@ -338,6 +407,7 @@ class TrayController:
 
     def show_settings(self):
         self.settings_dialog.load_from_settings(self._dialog_settings())
+        self.settings_dialog.ensure_mouse_practice()
         if not self.paused_action.isChecked():
             self.auto_paused = True
             self.paused_action.setChecked(True)
@@ -365,6 +435,8 @@ class TrayController:
             return
         self.exiting = True
         self.tray_icon.hide()
+        if hasattr(self, "settings_dialog"):
+            self.settings_dialog.stop_mouse_practice()
         set_error_handler(None)
         set_paused(False)
         stop_service(self.stop_event, self.worker_thread)
@@ -391,12 +463,24 @@ class TrayController:
 
     def _dialog_settings(self):
         values = self.settings.copy()
+        values.setdefault("enable_keyboard_shortcut", True)
+        values.setdefault("enable_mouse_shortcut", True)
         if not self.has_user_overrides:
             values["groq_api_key"] = os.environ.get("GROQ_API_KEY", values.get("groq_api_key", ""))
             values["openai_api_key"] = os.environ.get("OPENAI_API_KEY", values.get("openai_api_key", ""))
             values["whisper_backend"] = os.environ.get("WHISPER_BACKEND", values.get("whisper_backend", ""))
             values["hotkey"] = os.environ.get("WKEY", values.get("hotkey", "ctrl_r"))
             values["mouse_button"] = os.environ.get("WKEY_MOUSE_BUTTON", values.get("mouse_button", ""))
+            kb_env = os.environ.get("WKEY_KEYBOARD_ENABLED")
+            if kb_env is not None:
+                values["enable_keyboard_shortcut"] = kb_env.lower() in ("1", "true", "yes", "on")
+            else:
+                values["enable_keyboard_shortcut"] = values.get("enable_keyboard_shortcut", True)
+            mouse_env = os.environ.get("WKEY_MOUSE_ENABLED")
+            if mouse_env is not None:
+                values["enable_mouse_shortcut"] = mouse_env.lower() in ("1", "true", "yes", "on")
+            else:
+                values["enable_mouse_shortcut"] = values.get("enable_mouse_shortcut", True)
             llm_env = os.environ.get("LLM_CORRECT")
             if llm_env is not None:
                 values["llm_correct"] = llm_env.lower() in ("1", "true", "yes", "on")

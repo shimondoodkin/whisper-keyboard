@@ -13,6 +13,8 @@ SETTINGS_PATH = Path.home() / ".wkey.json"
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "hotkey": "ctrl_r",
     "mouse_button": "",
+    "enable_keyboard_shortcut": True,
+    "enable_mouse_shortcut": True,
     "whisper_backend": "",
     "groq_api_key": "",
     "openai_api_key": "",
@@ -52,9 +54,13 @@ def apply_settings(settings: Dict[str, Any], clear_missing: bool = False) -> Non
     if not settings:
         return
 
+    allow_empty = {"WKEY", "WKEY_MOUSE_BUTTON"}
+
     mapping = {
         "WKEY": settings.get("hotkey"),
         "WKEY_MOUSE_BUTTON": settings.get("mouse_button"),
+        "WKEY_KEYBOARD_ENABLED": "true" if settings.get("enable_keyboard_shortcut", True) else "false",
+        "WKEY_MOUSE_ENABLED": "true" if settings.get("enable_mouse_shortcut", True) else "false",
         "WHISPER_BACKEND": settings.get("whisper_backend"),
         "GROQ_API_KEY": settings.get("groq_api_key"),
         "OPENAI_API_KEY": settings.get("openai_api_key"),
@@ -64,13 +70,17 @@ def apply_settings(settings: Dict[str, Any], clear_missing: bool = False) -> Non
 
     def _resolved_value(env_key: str, candidate: Any) -> Any:
         """Prefer explicit setting; fall back to existing environment value."""
+        if candidate == "" and env_key in allow_empty:
+            return ""
         if candidate not in ("", None):
             return candidate
         return os.environ.get(env_key)
 
     for env_key, value in mapping.items():
         resolved = _resolved_value(env_key, value)
-        if resolved not in ("", None):
+        if resolved == "":
+            os.environ.pop(env_key, None)
+        elif resolved not in (None,):
             os.environ[env_key] = resolved
         elif clear_missing:
             os.environ.pop(env_key, None)

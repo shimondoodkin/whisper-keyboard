@@ -16,6 +16,23 @@ from wkey.whisper import apply_whisper
 from wkey.utils import process_transcript, convert_chinese
 from wkey.llm_correction import llm_corrector
 
+def _coerce_bool(value, fallback):
+    if value is None:
+        return bool(fallback)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return False
+        return stripped.lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
+def _env_bool(name, fallback):
+    return _coerce_bool(os.environ.get(name), fallback)
+
+
 load_dotenv()
 current_settings, has_user_overrides = load_settings()
 if has_user_overrides:
@@ -23,6 +40,8 @@ if has_user_overrides:
 
 key_label = os.environ.get("WKEY", current_settings.get("hotkey", "ctrl_r"))
 mouse_button_label = os.environ.get("WKEY_MOUSE_BUTTON", current_settings.get("mouse_button", ""))
+keyboard_enabled = _env_bool("WKEY_KEYBOARD_ENABLED", current_settings.get("enable_keyboard_shortcut", True))
+mouse_enabled = _env_bool("WKEY_MOUSE_ENABLED", current_settings.get("enable_mouse_shortcut", True))
 CHINESE_CONVERSION = os.environ.get("CHINESE_CONVERSION")
 
 HOTKEY_PARTS = set()
@@ -59,6 +78,13 @@ def _key_name(key):
 def _set_record_key(label: str):
     global key_label, HOTKEY_PARTS
     try:
+        if not label:
+            HOTKEY_PARTS = set()
+            pressed_keys.clear()
+            key_label = ""
+            os.environ.pop("WKEY", None)
+            print("Keyboard hotkey cleared.")
+            return
         parts = set(_parse_hotkey(label))
         HOTKEY_PARTS = parts
         pressed_keys.clear()
@@ -110,6 +136,26 @@ def _set_mouse_button(label: str):
 
 _set_mouse_button(mouse_button_label)
 
+
+def _set_keyboard_enabled(enabled: bool):
+    global keyboard_enabled, pressed_keys
+    keyboard_enabled = bool(enabled)
+    if not keyboard_enabled:
+        pressed_keys.clear()
+    os.environ["WKEY_KEYBOARD_ENABLED"] = "true" if keyboard_enabled else "false"
+
+
+def _set_mouse_enabled(enabled: bool):
+    global mouse_enabled, mouse_pressed
+    mouse_enabled = bool(enabled)
+    if not mouse_enabled:
+        mouse_pressed = False
+    os.environ["WKEY_MOUSE_ENABLED"] = "true" if mouse_enabled else "false"
+
+
+_set_keyboard_enabled(keyboard_enabled)
+_set_mouse_enabled(mouse_enabled)
+
 _error_handler = None
 
 def set_error_handler(handler):
@@ -134,10 +180,18 @@ def refresh_configuration(settings=None, clear_missing=True):
     global CHINESE_CONVERSION
     if settings:
         apply_settings(settings, clear_missing=clear_missing)
-    hotkey = os.environ.get("WKEY", (settings or {}).get("hotkey", key_label))
+    hotkey_env = os.environ.get("WKEY") if "WKEY" in os.environ else None
+    hotkey = hotkey_env if hotkey_env is not None else (settings or {}).get("hotkey", key_label)
     _set_record_key(hotkey)
-    mouse_button = os.environ.get("WKEY_MOUSE_BUTTON", (settings or {}).get("mouse_button", mouse_button_label))
+    mouse_env = os.environ.get("WKEY_MOUSE_BUTTON") if "WKEY_MOUSE_BUTTON" in os.environ else None
+    mouse_button = mouse_env if mouse_env is not None else (settings or {}).get("mouse_button", mouse_button_label)
     _set_mouse_button(mouse_button)
+    kb_env = os.environ.get("WKEY_KEYBOARD_ENABLED") if "WKEY_KEYBOARD_ENABLED" in os.environ else None
+    kb_enabled = _coerce_bool(kb_env, (settings or {}).get("enable_keyboard_shortcut", keyboard_enabled))
+    _set_keyboard_enabled(kb_enabled)
+    mouse_env_enabled = os.environ.get("WKEY_MOUSE_ENABLED") if "WKEY_MOUSE_ENABLED" in os.environ else None
+    mouse_enabled_flag = _coerce_bool(mouse_env_enabled, (settings or {}).get("enable_mouse_shortcut", mouse_enabled))
+    _set_mouse_enabled(mouse_enabled_flag)
     CHINESE_CONVERSION = os.environ.get("CHINESE_CONVERSION")
 
 # This flag determines when to record
@@ -155,19 +209,42 @@ keyboard_controller = KeyboardController()
 
 
 def _hotkey_active():
-    return bool(HOTKEY_PARTS) and HOTKEY_PARTS.issubset(pressed_keys)
+    return keyboard_enabled and bool(HOTKEY_PARTS) and HOTKEY_PARTS.issubset(pressed_keys)
 
 
 def _mouse_active():
-    return MOUSE_BUTTON is not None and mouse_pressed
+    return mouse_enabled and MOUSE_BUTTON is not None and mouse_pressed
 
 
 def _triggers_active():
-    if HOTKEY_PARTS and MOUSE_BUTTON:
+    if keyboard_enabled and mouse_enabled:
         return _hotkey_active() or _mouse_active()
-    if HOTKEY_PARTS:
+    if keyboard_enabled:
         return _hotkey_active()
-    return _mouse_active()
+    if mouse_enabled:
+        return _mouse_active()
+    return False
+
+
+def _mouse_label_hint():
+    mapping = {
+        "middle": "middle mouse button",
+        "x1": "thumb button 1",
+        "x2": "thumb button 2",
+    }
+    label = mouse_button_label.strip().lower() if mouse_button_label else ""
+    return mapping.get(label, f"{mouse_button_label} mouse button") if label else ""
+
+
+def _trigger_hint():
+    hints = []
+    if keyboard_enabled and key_label:
+        hints.append(f"hold down {key_label}")
+    if mouse_enabled:
+        mouse_hint = _mouse_label_hint()
+        if mouse_hint:
+            hints.append(f"hold the {mouse_hint}")
+    return " or ".join(hints)
 
 
 def _record_and_transcribe(audio_chunks):
@@ -288,7 +365,11 @@ def callback(indata, frames, time, status):
 
 def run(stop_event=None, install_sigint_handler=True):
     """Runs the listener/audio loop until stop_event is set."""
-    print(f"wkey is active. Hold down {key_label} to start dictating.")
+    hint = _trigger_hint()
+    if hint:
+        print(f"wkey is active. {hint} to start dictating.")
+    else:
+        print("wkey is running, but both keyboard and mouse triggers are disabled.")
     internal_event = stop_event or threading.Event()
 
     listener = Listener(on_press=on_press, on_release=on_release)
