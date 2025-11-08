@@ -12,6 +12,7 @@ SETTINGS_PATH = Path.home() / ".wkey.json"
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "hotkey": "ctrl_r",
+    "mouse_button": "",
     "whisper_backend": "",
     "groq_api_key": "",
     "openai_api_key": "",
@@ -53,6 +54,7 @@ def apply_settings(settings: Dict[str, Any], clear_missing: bool = False) -> Non
 
     mapping = {
         "WKEY": settings.get("hotkey"),
+        "WKEY_MOUSE_BUTTON": settings.get("mouse_button"),
         "WHISPER_BACKEND": settings.get("whisper_backend"),
         "GROQ_API_KEY": settings.get("groq_api_key"),
         "OPENAI_API_KEY": settings.get("openai_api_key"),

@@ -47,6 +47,7 @@ Configure the app through environment variables (put them in `.env`, your shell 
 - `GROQ_API_KEY` or `OPENAI_API_KEY`: provide at least one. If both exist, Groq is preferred unless you set `WHISPER_BACKEND`.
 - `WHISPER_BACKEND` (optional): choose `groq`, `openai`, or any backend implemented in `wkey.whisper`.
 - `WKEY` (optional): pynput key name that toggles recording (default `ctrl_r`). Use the bundled `fkey` helper to discover key names.
+- `WKEY_MOUSE_BUTTON` (optional): `middle`, `x1`, or `x2` to start dictation while holding the selected mouse button. Leave blank to disable.
 - `LLM_CORRECT` (optional): set to `true` to run transcripts through `llm_corrector`.
 - `CHINESE_CONVERSION` (optional): OpenCC conversion code such as `s2t`, `t2s`, etc.
 
@@ -79,7 +80,8 @@ wkey is active. Hold down ctrl_r to start dictating.
 Launch `wkey-tray` (pip) or `python -m wkey.tray_app` (repo clone).
 
 - A "W" icon appears in your notification area immediately; the listener runs in the background.
-- Click/double-click the icon to open the Settings dialog: edit Groq/OpenAI keys, pick a backend and hotkey (with live key-capture history, including left/right modifier combos like `ctrl_r+shift_r`), toggle LLM correction, set Chinese conversion, and Apply/Save without restarting; dictation auto-pauses while the dialog is open so your capture presses don't trigger recordings.
+- Click/double-click the icon to open the Settings dialog: edit Groq/OpenAI keys, pick a backend and hotkey (with live key-capture history, including left/right modifier combos like `ctrl_r+shift_r`), optionally choose a mouse button trigger, toggle LLM correction, set Chinese conversion, and Apply/Save without restarting; dictation auto-pauses while the dialog is open so your capture presses don't trigger recordings.
+- Launching `wkey-tray` multiple times automatically replaces the previous instance (stored under a temp PID file), so only one tray service runs at a time.
 - Right-click the tray icon for a context menu with **Settings**, **Pause dictation**, and **Exit**.
 - Press `Ctrl+C` in the launching terminal to shut down the tray app as well.
 

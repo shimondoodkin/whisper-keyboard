@@ -35,6 +35,7 @@ from wkey.config import (
     load_settings,
     save_settings,
 )
+from wkey.single_instance import PidFileLock, SingleInstanceError
 from wkey.wkey import start_service, stop_service, refresh_configuration, set_error_handler, set_paused
 
 
@@ -103,6 +104,13 @@ class SettingsDialog(QDialog):
         self.hotkey_input = QLineEdit()
         form.addRow("Hotkey", self.hotkey_input)
 
+        self.mouse_button_combo = QComboBox()
+        self.mouse_button_combo.addItem("Disabled", "")
+        self.mouse_button_combo.addItem("Middle mouse", "middle")
+        self.mouse_button_combo.addItem("Thumb button 1 (Mouse 4)", "x1")
+        self.mouse_button_combo.addItem("Thumb button 2 (Mouse 5)", "x2")
+        form.addRow("Mouse button trigger", self.mouse_button_combo)
+
         self.llm_checkbox = QCheckBox("Enable LLM correction")
         form.addRow("", self.llm_checkbox)
 
@@ -163,6 +171,7 @@ class SettingsDialog(QDialog):
             "openai_api_key": self.openai_input.text().strip(),
             "whisper_backend": self.backend_combo.currentText().strip(),
             "hotkey": self.hotkey_input.text().strip() or "ctrl_r",
+            "mouse_button": self.mouse_button_combo.currentData() or "",
             "llm_correct": self.llm_checkbox.isChecked(),
             "chinese_conversion": self.chinese_input.text().strip(),
         }
@@ -176,6 +185,9 @@ class SettingsDialog(QDialog):
         index = self.backend_combo.findText(backend_value)
         self.backend_combo.setCurrentIndex(index if index >= 0 else 0)
         self.hotkey_input.setText(settings.get("hotkey", "ctrl_r"))
+        mouse_value = settings.get("mouse_button", "")
+        idx = self.mouse_button_combo.findData(mouse_value)
+        self.mouse_button_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.llm_checkbox.setChecked(bool(settings.get("llm_correct")))
         self.chinese_input.setText(settings.get("chinese_conversion", ""))
 
@@ -276,10 +288,11 @@ class SettingsDialog(QDialog):
 class TrayController:
     """Owns the background service thread and tray UI."""
 
-    def __init__(self, app: QApplication, sigint_event: threading.Event):
+    def __init__(self, app: QApplication, sigint_event: threading.Event, instance_lock: 'PidFileLock'):
         self.app = app
         self.sigint_event = sigint_event
         self.exiting = False
+        self.instance_lock = instance_lock
         self.stop_event, self.worker_thread = start_service()
 
         self.tray_icon = QSystemTrayIcon(_build_default_icon(), self.app)
@@ -355,6 +368,8 @@ class TrayController:
         set_error_handler(None)
         set_paused(False)
         stop_service(self.stop_event, self.worker_thread)
+        if self.instance_lock:
+            self.instance_lock.release()
         self.app.quit()
 
     def handle_service_error(self, message: str):
@@ -381,6 +396,7 @@ class TrayController:
             values["openai_api_key"] = os.environ.get("OPENAI_API_KEY", values.get("openai_api_key", ""))
             values["whisper_backend"] = os.environ.get("WHISPER_BACKEND", values.get("whisper_backend", ""))
             values["hotkey"] = os.environ.get("WKEY", values.get("hotkey", "ctrl_r"))
+            values["mouse_button"] = os.environ.get("WKEY_MOUSE_BUTTON", values.get("mouse_button", ""))
             llm_env = os.environ.get("LLM_CORRECT")
             if llm_env is not None:
                 values["llm_correct"] = llm_env.lower() in ("1", "true", "yes", "on")
@@ -389,10 +405,17 @@ class TrayController:
 
 
 def main():
+    try:
+        instance_lock = PidFileLock("wkey-tray")
+        instance_lock.acquire()
+    except SingleInstanceError as exc:
+        print(exc)
+        return 0
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     sigint_event = threading.Event()
-    controller = TrayController(app, sigint_event)
+    controller = TrayController(app, sigint_event, instance_lock)
 
     def handle_sigint(signum, frame):
         sigint_event.set()
