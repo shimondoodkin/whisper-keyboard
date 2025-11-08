@@ -99,6 +99,28 @@ When working from the **cloned repository**:
 - CLI listener: `python run_wkey.py` (or `python -m wkey`)
 - Tray companion: `python -m wkey.tray_app`
 
+### Running without a console window (Windows)
+
+Use `pythonw` to suppress the console:
+
+```powershell
+pythonw -m wkey.tray_app
+```
+
+Make sure `pythonw.exe` points to the same interpreter where you installed `wkey`.
+
+### Windows auto-start options
+
+- **Startup folder**: create a shortcut in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup` that targets `pythonw.exe -m wkey.tray_app`. Set “Start in” to the folder containing your `.env` file if needed.
+- **Task Scheduler**:
+  1. Open Task Scheduler → “Create Task…”.
+  2. “Run only when user is logged on” (ensures tray icon is visible) and check “Run with highest privileges” if you plan to dictate into elevated apps.
+  3. Trigger: “At log on”.
+  4. Action: “Start a program”, Program/script `pythonw.exe`, Arguments `-m wkey.tray_app`, Start in `%USERPROFILE%\path\to\whisper-keyboard`.
+  5. Save and test the task.
+
+Either method launches the tray app at login with no visible console window.
+
 ## Create API accounts
 
 1. **Groq** – visit https://console.groq.com/, create an account, then open the API Keys page to generate a token. Set it as `GROQ_API_KEY`.
